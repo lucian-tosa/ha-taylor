@@ -13,7 +13,7 @@ Requires Home Assistant 2026.1 or newer. It has no dependencies beyond what Home
 
 ## Installation
 
-**HACS:** HACS → ⋮ → Custom repositories → add `https://github.com/lucian-tosa/ha-taylor` with category *Integration*. Then install *Taylor Solar* and restart Home Assistant. If the repository is private, HACS may not be able to download it. In that case, use the manual install.
+**HACS:** HACS → ⋮ → Custom repositories → add `https://github.com/lucian-tosa/ha-taylor` with category *Integration*. Then install *Taylor Solar* and restart Home Assistant. HACS then offers updates when new versions are released.
 
 **Manual:** copy `custom_components/taylor_solar` into `/config/custom_components/` and restart Home Assistant.
 
