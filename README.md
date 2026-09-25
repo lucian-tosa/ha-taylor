@@ -48,17 +48,23 @@ To change the backfill period, remove the integration and add it again.
 
 ## Verifying the API
 
-A few behaviors of the Taylor API are undocumented. The code paths that depend on them are marked `TODO(verify)`. You can check them with `curl` and `jq`:
+A few behaviors of the Taylor API are undocumented. The code paths that depend on them are marked `TODO(verify)`. You can check them with `curl` (7.76 or newer) and `jq`. Start with this setup block. It prompts for your credentials, so the password stays out of your shell history. Each step prints its result, or the error body if a request fails:
 
 ```bash
 H=(-H 'Client-Version: 1.0.0' -H 'Client-Name: end-user-api' -H 'Content-Type: application/json')
 API=https://clientapi.taylor.solar
-AUTH=$(curl -s "${H[@]}" -X POST $API/api/authenticate \
-  -d '{"userName":"you@example.com","password":"…","persistUserSession":true}')
+read -rp 'Taylor email: ' TAYLOR_USER; read -rsp 'Taylor password: ' TAYLOR_PASS; echo
+AUTH=$(curl -sS --fail-with-body "${H[@]}" -H 'Accept: text/plain' -X POST "$API/api/authenticate" \
+  -d "$(jq -n --arg u "$TAYLOR_USER" --arg p "$TAYLOR_PASS" '{userName: $u, password: $p, persistUserSession: true}')") \
+  && jq '{exp, token: (.token[0:8] + "…")}' <<<"$AUTH" || echo "Login failed: $AUTH"
 TOKEN=$(jq -r .token <<<"$AUTH")
-SITE=$(curl -s "${H[@]}" -H "Authorization: Taylor $TOKEN" $API/api/public/sites | jq -r '.[0].id')
-day() { curl -s "${H[@]}" -H "Authorization: Taylor $TOKEN" "$API/api/public/site/$SITE/data/$1"; }
+SITES=$(curl -sS --fail-with-body "${H[@]}" -H "Authorization: Taylor $TOKEN" "$API/api/public/sites") \
+  && jq . <<<"$SITES" || echo "Listing sites failed: $SITES"
+SITE=$(jq -r '.[0].id' <<<"$SITES"); echo "Using site $SITE"
+day() { curl -sS --fail-with-body "${H[@]}" -H "Authorization: Taylor $TOKEN" "$API/api/public/site/$SITE/data/$1"; }
 ```
+
+When it works, it prints the token expiry with the start of the token, your sites, and the site it will use. If you see a `curl: (…)` error instead, the request never reached Taylor. Run `curl -v "$API"` to check DNS, proxy or TLS.
 
 1. **Are consumption, import and export (types 1–3) populated without a Taylor meter or battery?** Print the day totals per type:
    ```bash
@@ -73,7 +79,7 @@ day() { curl -s "${H[@]}" -H "Authorization: Taylor $TOKEN" "$API/api/public/sit
    ```bash
    day 2025/10/26 | jq -r '.systemMetrics[0].dataPoints[].timestamp' | sed -n '1,10p'; day 2025/10/26 | jq '[.systemMetrics[0].dataPoints[]] | length'
    ```
-4. **How long does the token live with `persistUserSession: true`?**
+4. **How long does the token live with `persistUserSession: true`?** Compare the `exp` from the setup block with the current time:
    ```bash
    jq -r .exp <<<"$AUTH"; date -u +%FT%TZ
    ```
