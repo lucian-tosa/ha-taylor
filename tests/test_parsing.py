@@ -135,4 +135,88 @@ def test_empty_payloads() -> None:
         day = parse_day(payload)
         assert day.series == {}
         assert day.panels == []
-        assert day.interval_seconds == 1800
+        assert day.interval_seconds == 900
+
+
+def _live_point(ts: str, solar: float, panels: dict[int, float] | None = None) -> dict:
+    """Build a data point in the format the live API returns."""
+    return {
+        "timestamp": ts,
+        "inverterEnergyData": {
+            "quality": 0,
+            "solarProduction": solar,
+            "consumption": None,
+            "grid": None,
+            "battery": None,
+            "balance": None,
+        },
+        "panelEnergyData": [
+            {
+                "id": panel_id,
+                "cellStringAProductionWh": wh,
+                "cellStringBProductionWh": wh,
+                "cellStringCProductionWh": wh,
+            }
+            for panel_id, wh in (panels or {}).items()
+        ],
+        "co2SavedGram": 0,
+        "eurosSavedMill": None,
+    }
+
+
+LIVE = {
+    "systemMetrics": [
+        {
+            "dataPoints": [
+                _live_point("2025-06-01T05:00:00Z", 0),  # padding: no data yet
+                _live_point("2025-06-01T05:15:00", 0, {1: 0, 2: 0}),
+                _live_point("2025-06-01T13:45:00", 438, {1: 10.5, 2: 11}),
+                _live_point("2025-06-01T14:00:00", 400, {1: 10, 2: 9.5}),
+                _live_point("2025-06-01T22:15:00Z", 0),  # padding: after sunset
+            ],
+            "maxPossibleValue": 718,
+            "panelCount": 2,
+            "panelLayout": {"panelPositions": []},
+        }
+    ],
+    "dayDataPointDurationSeconds": 900,
+}
+
+
+def test_live_format() -> None:
+    day = parse_day(LIVE)
+    assert day.interval_seconds == 900
+    # Padding points are skipped; null consumption/grid/battery are not series.
+    assert day.series == {
+        0: [
+            (datetime(2025, 6, 1, 5, 15), 0),
+            (datetime(2025, 6, 1, 13, 45), 438),
+            (datetime(2025, 6, 1, 14), 400),
+        ]
+    }
+    # Panel energy per interval is summed into per-day totals.
+    assert day.panels == [PanelDay(1, 20.5, 20.5, 20.5), PanelDay(2, 20.5, 20.5, 20.5)]
+    assert hourly_kwh(day.series[0], AMS) == {
+        datetime(2025, 6, 1, 3, tzinfo=UTC): 0.0,
+        datetime(2025, 6, 1, 11, tzinfo=UTC): 0.438,
+        datetime(2025, 6, 1, 12, tzinfo=UTC): 0.4,
+    }
+
+
+def test_live_consumption_is_imported_when_reported() -> None:
+    point = _live_point("2025-06-01T12:00:00", 300)
+    point["inverterEnergyData"]["consumption"] = 250
+    day = parse_day({"systemMetrics": [{"dataPoints": [point]}]})
+    assert day.series == {
+        0: [(datetime(2025, 6, 1, 12), 300)],
+        1: [(datetime(2025, 6, 1, 12), 250)],
+    }
+
+
+def test_live_day_before_installation_is_empty() -> None:
+    padding = [_live_point(f"2024-04-01T{h:02d}:00:00Z", 0) for h in range(8, 20)]
+    day = parse_day(
+        {"systemMetrics": [{"dataPoints": padding}], "dayDataPointDurationSeconds": 900}
+    )
+    assert day.series == {}
+    assert day.panels == []

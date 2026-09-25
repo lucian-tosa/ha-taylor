@@ -179,8 +179,6 @@ class StatisticsImporter:
         day = first
         while day <= today:
             parsed = parse_day(await self.client.async_get_day(site_id, day))
-            # TODO(verify): whether types 1-3 are all zeros without a Taylor meter;
-            # if so, they are still imported as flat statistics.
             for type_, series in parsed.series.items():
                 hours = sorted(
                     (start, kwh)

@@ -105,8 +105,8 @@ class TaylorClient:
 
     async def async_get_day(self, site_id: str, day: date) -> dict[str, Any] | None:
         """Return the day payload of a site, or None if there is no data."""
-        # TODO(verify): what Taylor returns for days before the install date.
-        # A 404 is treated as an empty day.
+        # Days before installation return zero-filled padding, not 404; a 404 is
+        # still treated as an empty day.
         return await self._request(
             f"/api/public/site/{site_id}/data/{day.year}/{day.month}/{day.day}",
             allow_404=True,

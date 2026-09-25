@@ -4,7 +4,7 @@ A custom integration that reads the [Taylor Solar](https://taylor.solar) cloud A
 
 A RESTful sensor would book energy at poll time, couldn't backfill, and would read Taylor's retroactive corrections as meter resets. This integration does the following instead:
 
-- It writes Taylor's 30-minute (or 15-minute) buckets into **external statistics** at their real UTC hour.
+- It writes Taylor's 15-minute buckets into **external statistics** at their real UTC hour.
 - It **backfills** history on first setup, from 0 to 1095 days.
 - On every run it **re-imports yesterday and today** to pick up Taylor's revisions, and rewrites the running sums consistently.
 - It handles token refresh, rate limiting (HTTP 429) and API-version breaks (HTTP 418, raised as a repair issue).
@@ -25,7 +25,7 @@ Settings → Dashboards → Energy → Solar production → add **Taylor ‹site
 
 The statistics appear once the first hour has been imported. On first setup, the backfill runs in the background at about 8 requests per minute (Taylor allows about 10), so a year takes about 45 minutes. The *Statistics imported through* diagnostic sensor shows progress.
 
-Statistics (`taylor_solar:<site>_<key>`) are created for every type present in the data: `solar_production`, `consumption`, `grid_import`, `grid_export`, `battery_charge` and `battery_discharge`. If grid import/export already comes from a P1 meter, keep using that for the grid.
+Statistics (`taylor_solar:<site>_<key>`) are created for `solar_production`, and for `consumption` when Taylor reports it (it doesn't without a Taylor meter). Taylor's grid and battery values are signed, and their sign convention hasn't been confirmed, so they are not imported yet. If grid import/export already comes from a P1 meter, keep using that for the grid.
 
 ## Entities
 
@@ -66,26 +66,26 @@ day() { curl -sS --fail-with-body "${H[@]}" -H "Authorization: Taylor $TOKEN" "$
 
 When it works, it prints the token expiry with the start of the token, your sites, and the site it will use. If you see a `curl: (…)` error instead, the request never reached Taylor. Run `curl -v "$API"` to check DNS, proxy or TLS.
 
-1. **Are consumption, import and export (types 1–3) populated without a Taylor meter or battery?** Print the day totals per type:
+### What the live API returns
+
+These were checked against a live site in September 2026 (one 3.7 kWp system without a Taylor meter or battery). The response differs from Taylor's API document:
+
+- Each data point has an `inverterEnergyData` object instead of a `data` list of `type`/`wh` items. It holds `solarProduction` (Wh per interval), plus `consumption`, `grid`, `battery` and `balance`, which are `null` without a Taylor meter or battery. There is also a `quality` field, always 0 so far.
+- Per-panel production comes per data point, in `panelEnergyData` (`id` plus cell strings A/B/C in Wh). There is no `panelData`. It is present for past days too.
+- Intervals are 15 minutes (`dayDataPointDurationSeconds: 900`), and only daylight hours are reported. That means the DST fall-back hour never appears.
+- Timestamps are naive site-local times. Points whose timestamp ends in `Z` are zero-filled padding for intervals without data, and are skipped. Days before installation return only padding, not a 404.
+
+The integration accepts both this format and the one in Taylor's document.
+
+### Still open
+
+1. **What are the sign conventions of `grid` and `battery`?** This needs a system with a Taylor meter or battery:
    ```bash
-   day 2026/6/15 | jq '[.systemMetrics[].dataPoints[].data[]] | group_by(.type) | map({type: .[0].type, wh: (map(.wh) | add)})'
+   day 2026/6/15 | jq '[.systemMetrics[].dataPoints[].inverterEnergyData | {grid, battery, balance}] | map(select(.grid != null)) | .[0:5]'
    ```
-2. **What is returned before the install date (2024-04-13)?** Check whether it's a 404, empty `dataPoints` or zeros:
-   ```bash
-   curl -s -o /dev/null -w '%{http_code}\n' "${H[@]}" -H "Authorization: Taylor $TOKEN" "$API/api/public/site/$SITE/data/2024/4/1"
-   day 2024/4/1 | jq '{points: [.systemMetrics[].dataPoints[]] | length, wh: [.systemMetrics[].dataPoints[].data[].wh] | add}'
-   ```
-3. **Are 02:00/02:30 repeated on the DST fall-back day?** 2025-10-26 was the last one; the next is 2026-10-25:
-   ```bash
-   day 2025/10/26 | jq -r '.systemMetrics[0].dataPoints[].timestamp' | sed -n '1,10p'; day 2025/10/26 | jq '[.systemMetrics[0].dataPoints[]] | length'
-   ```
-4. **How long does the token live with `persistUserSession: true`?** Compare the `exp` from the setup block with the current time:
+2. **How long does the token live with `persistUserSession: true`?** Compare the `exp` from the setup block with the current time:
    ```bash
    jq -r .exp <<<"$AUTH"; date -u +%FT%TZ
-   ```
-5. **Is `panelData` present for past days?**
-   ```bash
-   day 2025/6/1 | jq '[.systemMetrics[].panelData[]?] | length'
    ```
 
 ## Development
