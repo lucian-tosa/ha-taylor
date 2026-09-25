@@ -50,7 +50,7 @@ One device per site, with these entities:
 | --- | --- |
 | *Solar production today* (kWh) | Today's total so far. |
 | *Consumption today* (kWh) | Only when Taylor reports consumption. |
-| *Solar power* (W) | Average power over the latest 15-minute interval Taylor has reported. Attribute `bucket_start`. |
+| *Solar power* (W) | Average power over the latest 15-minute interval Taylor has reported, or 0 W once that interval ended more than 90 minutes ago (at night). Attribute `bucket_start` is the start of that interval. Usable as *solar production power* in the Energy dashboard. |
 | *Panel ‹n› energy today* (kWh) | One per panel, numbered as in the Taylor app's layout. Attributes `taylor_panel_id`, `cell_string_a_wh`, `cell_string_b_wh`, `cell_string_c_wh`. |
 | *Statistics imported through* (date, diagnostic) | How far the history import has got. |
 

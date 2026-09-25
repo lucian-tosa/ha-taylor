@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -52,6 +52,22 @@ def _latest_solar(coordinator: TaylorCoordinator) -> tuple[Any, float] | None:
     return max(localize(series, dt_util.get_default_time_zone()), key=lambda p: p[0])
 
 
+# Solar power reads 0 W once the newest reported interval ended this long ago,
+# i.e. Taylor has reported no production since (after sunset, before sunrise).
+# Provisional: it must stay above Taylor's normal reporting delay.
+STALE_AFTER = timedelta(minutes=90)
+
+
+def _solar_power(coordinator: TaylorCoordinator) -> int:
+    if (latest := _latest_solar(coordinator)) is None:
+        return 0
+    start, wh = latest
+    interval = coordinator.data.interval_seconds
+    if dt_util.utcnow() - (start + timedelta(seconds=interval)) > STALE_AFTER:
+        return 0
+    return round(wh * 3600 / interval)
+
+
 def _panel(coordinator: TaylorCoordinator, panel_id: int) -> PanelDay | None:
     return next((p for p in coordinator.data.panels if p.panel_id == panel_id), None)
 
@@ -89,9 +105,7 @@ SOLAR_POWER = TaylorSensorDescription(
     device_class=SensorDeviceClass.POWER,
     state_class=SensorStateClass.MEASUREMENT,
     native_unit_of_measurement=UnitOfPower.WATT,
-    value_fn=lambda c: (
-        round(latest[1] * 3600 / c.data.interval_seconds) if (latest := _latest_solar(c)) else None
-    ),
+    value_fn=_solar_power,
     attr_fn=lambda c: (
         {"bucket_start": latest[0].isoformat()} if (latest := _latest_solar(c)) else None
     ),

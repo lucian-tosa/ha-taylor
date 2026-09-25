@@ -208,3 +208,33 @@ async def test_live_format_panels_named_by_layout_number(
     assert hass.states.get("sensor.home_panel_2_energy_today").state == "0.027"
     entry = entity_registry.async_get("sensor.home_panel_1_energy_today")
     assert entry.unique_id.endswith("_panel_9001_energy_today")
+
+
+async def test_solar_power_drops_to_zero_without_recent_data(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    client: AsyncMock,
+    days: dict[date, dict[str, Any]],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """The newest interval (09:00-09:30 CEST) goes stale 90 minutes after it ends."""
+    await _setup(hass, config_entry)
+    assert hass.states.get("sensor.home_solar_power").state == "900"
+
+    async def at(hour: int, minute: int) -> None:
+        freezer.move_to(datetime(2026, 6, 15, hour - 2, minute, tzinfo=UTC))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+    await at(10, 55)  # 85 minutes after the interval ended
+    assert hass.states.get("sensor.home_solar_power").state == "900"
+
+    await at(11, 10)  # 100 minutes
+    power = hass.states.get("sensor.home_solar_power")
+    assert power.state == "0"
+    assert power.attributes["bucket_start"] == "2026-06-15T07:00:00+00:00"
+
+    # No intervals at all yet (before sunrise).
+    days[TODAY] = day_payload(TODAY, {})
+    await at(11, 30)
+    assert hass.states.get("sensor.home_solar_power").state == "0"
