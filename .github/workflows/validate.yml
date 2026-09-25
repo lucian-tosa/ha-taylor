@@ -20,8 +20,10 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Private repo without brand assets or topics.
-          ignore: brands topics description
+          # Private repo: no brand assets or topics, and the hacsjson and
+          # integration_manifest checks fetch files anonymously and always 404.
+          # Drop the last two from this list if the repo becomes public.
+          ignore: brands topics description hacsjson integration_manifest
 
   pytest:
     runs-on: ubuntu-latest
