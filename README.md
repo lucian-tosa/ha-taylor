@@ -13,11 +13,19 @@ Requires Home Assistant 2026.1 or newer. It has no dependencies beyond what Home
 
 ## Installation
 
-**HACS:** HACS → ⋮ → Custom repositories → add `https://github.com/lucian-tosa/ha-taylor` with category *Integration*. Then install *Taylor Solar* and restart Home Assistant. HACS then offers updates when new versions are released.
+**HACS:**
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=lucian-tosa&repository=ha-taylor&category=integration)
+
+The button opens this repository in HACS on your own Home Assistant, which offers to add it. You can also add it by hand: HACS → ⋮ → Custom repositories → add `https://github.com/lucian-tosa/ha-taylor` with category *Integration*. Then install *Taylor Solar* and restart Home Assistant. HACS then offers updates when new versions are released.
 
 **Manual:** copy `custom_components/taylor_solar` into `/config/custom_components/` and restart Home Assistant.
 
-Then go to Settings → Devices & services → Add integration → **Taylor Solar**. Enter your Taylor email and password, and choose how many days of history to import. If the account has several sites, pick one. Add the integration again for each additional site.
+Then add the integration:
+
+[![Open your Home Assistant instance and start setting up Taylor Solar.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=taylor_solar)
+
+Or go to Settings → Devices & services → Add integration → **Taylor Solar**. Enter your Taylor email and password, and choose how many days of history to import. If the account has several sites, pick one. Add the integration again for each additional site.
 
 ## Energy dashboard
 
