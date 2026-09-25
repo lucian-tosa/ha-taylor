@@ -172,13 +172,13 @@ async def test_live_format_panels_named_by_layout_number(
         "inverterEnergyData": {"quality": 0, "solarProduction": 400, "consumption": None},
         "panelEnergyData": [
             {
-                "id": 32684,
+                "id": 9001,
                 "cellStringAProductionWh": 10,
                 "cellStringBProductionWh": 11,
                 "cellStringCProductionWh": 12,
             },
             {
-                "id": 32577,
+                "id": 9002,
                 "cellStringAProductionWh": 9,
                 "cellStringBProductionWh": 9,
                 "cellStringCProductionWh": 9,
@@ -190,7 +190,7 @@ async def test_live_format_panels_named_by_layout_number(
             {
                 "dataPoints": [point],
                 "panelLayout": {
-                    "panelPositions": [{"id": 32684, "number": 1}, {"id": 32577, "number": 2}]
+                    "panelPositions": [{"id": 9001, "number": 1}, {"id": 9002, "number": 2}]
                 },
             }
         ],
@@ -204,7 +204,7 @@ async def test_live_format_panels_named_by_layout_number(
 
     panel = hass.states.get("sensor.home_panel_1_energy_today")
     assert panel.state == "0.033"
-    assert panel.attributes["taylor_panel_id"] == 32684
+    assert panel.attributes["taylor_panel_id"] == 9001
     assert hass.states.get("sensor.home_panel_2_energy_today").state == "0.027"
     entry = entity_registry.async_get("sensor.home_panel_1_energy_today")
-    assert entry.unique_id.endswith("_panel_32684_energy_today")
+    assert entry.unique_id.endswith("_panel_9001_energy_today")
