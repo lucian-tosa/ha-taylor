@@ -21,11 +21,18 @@ Then go to Settings → Devices & services → Add integration → **Taylor Sola
 
 ## Energy dashboard
 
-Settings → Dashboards → Energy → Solar production → add **Taylor ‹site› solar production**.
+Settings → Dashboards → Energy:
 
-The statistics appear once the first hour has been imported. On first setup, the backfill runs in the background at about 8 requests per minute (Taylor allows about 10), so a year takes about 45 minutes. The *Statistics imported through* diagnostic sensor shows progress.
+- **Solar production** → Add solar production → pick **Taylor ‹site› solar production**.
+- **Electricity grid** → use your P1 meter (or other grid meter) sensors for grid consumption and return to grid.
 
-Statistics (`taylor_solar:<site>_<key>`) are created for `solar_production`, and for `consumption` when Taylor reports it (it doesn't without a Taylor meter). Taylor's grid and battery values are signed, and their sign convention hasn't been confirmed, so they are not imported yet. If grid import/export already comes from a P1 meter, keep using that for the grid.
+With solar and grid configured, the Energy dashboard calculates your home's consumption itself (solar + grid import − grid export). You don't need a consumption value from Taylor.
+
+The solar source is a long-term statistic (`taylor_solar:<site>_solar_production`), not an entity. It holds hourly kWh at the hour the energy was produced, including backfilled history, and the dashboard's picker lists it next to sensors. The *today* sensors below have no `state_class` on purpose. A sensor would record energy when it is polled (15–60 minutes late), couldn't backfill, and Taylor's later corrections would look like meter resets.
+
+The statistic appears once the first hour has been imported. On first setup, the backfill runs in the background at about 8 requests per minute (Taylor allows about 10), so a year takes about 45 minutes. The *Statistics imported through* diagnostic sensor shows progress.
+
+A `consumption` statistic is also created if Taylor reports consumption. For a gateway that only reads the inverter, it reports `null`. Taylor's grid and battery values are signed, and their sign convention hasn't been confirmed, so they are not imported yet.
 
 ## Entities
 
@@ -33,10 +40,11 @@ One device per site, with these entities:
 
 | Entity | Notes |
 | --- | --- |
-| *‹Type› today* (kWh) | Today's total per type present. There is no `state_class`, so these don't show up in the Energy dashboard picker. Use the statistics above there. |
-| *Solar power* (W) | Average power over the latest bucket. Attribute `bucket_start`. |
-| *Panel ‹id› energy today* (kWh) | Attributes `cell_string_a_wh`, `cell_string_b_wh`, `cell_string_c_wh`. |
-| *Statistics imported through* (date, diagnostic) | The importer's cursor. |
+| *Solar production today* (kWh) | Today's total so far. |
+| *Consumption today* (kWh) | Only when Taylor reports consumption. |
+| *Solar power* (W) | Average power over the latest 15-minute interval Taylor has reported. Attribute `bucket_start`. |
+| *Panel ‹n› energy today* (kWh) | One per panel, numbered as in the Taylor app's layout. Attributes `taylor_panel_id`, `cell_string_a_wh`, `cell_string_b_wh`, `cell_string_c_wh`. |
+| *Statistics imported through* (date, diagnostic) | How far the history import has got. |
 
 Data is polled every 15 minutes. Taylor's timestamps are naive site-local times, and they are interpreted in Home Assistant's configured time zone.
 

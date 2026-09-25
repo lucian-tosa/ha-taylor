@@ -29,6 +29,7 @@ class PanelDay:
     a: float
     b: float
     c: float
+    number: int | None = None  # position in the site layout, as numbered in the Taylor app
 
     @property
     def total_wh(self) -> float:
@@ -71,7 +72,11 @@ def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
         for i, cell in enumerate("ABC"):
             totals[i] += panel.get(f"cellString{cell}ProductionWh") or 0
 
+    numbers: dict[int, int] = {}
+
     for metric in payload.get("systemMetrics") or []:
+        layout = metric.get("panelLayout") or {}
+        numbers |= {pos["id"]: pos["number"] for pos in layout.get("panelPositions") or []}
         seen: defaultdict[datetime, int] = defaultdict(int)
         for point in metric.get("dataPoints") or []:
             # A "Z" suffix marks zero-filled padding for intervals without data
@@ -99,7 +104,10 @@ def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
             type_: [(ts, wh) for (ts, _), wh in buckets.items()]
             for type_, buckets in sorted(merged.items())
         },
-        panels=[PanelDay(panel_id, *totals) for panel_id, totals in panels.items()],
+        panels=[
+            PanelDay(panel_id, *totals, number=numbers.get(panel_id))
+            for panel_id, totals in panels.items()
+        ],
     )
 
 

@@ -26,6 +26,7 @@ from homeassistant.components.recorder.statistics import get_metadata, statistic
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.setup import async_setup_component
 
 from .conftest import SITE_HEX, SITE_ID, day_payload
 
@@ -259,3 +260,32 @@ async def test_api_version_error_creates_issue(
     client.async_get_day.side_effect = TaylorApiVersionError
     await importer.async_run()
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_API_CHANGED)
+
+
+async def test_energy_dashboard_accepts_statistic(
+    hass: HomeAssistant, importer: StatisticsImporter, hass_ws_client
+) -> None:
+    """The imported statistic can be picked and validated as a solar source."""
+    await importer.async_run()
+    await async_wait_recording_done(hass)
+    assert await async_setup_component(hass, "energy", {})
+    client = await hass_ws_client(hass)
+
+    # What the Energy dashboard's statistic picker lists.
+    await client.send_json_auto_id({"type": "recorder/list_statistic_ids", "statistic_type": "sum"})
+    listed = {s["statistic_id"]: s for s in (await client.receive_json())["result"]}
+    assert listed[SOLAR]["unit_class"] == "energy"
+    assert listed[SOLAR]["name"] == "Taylor Home solar production"
+
+    await client.send_json_auto_id(
+        {
+            "type": "energy/save_prefs",
+            "energy_sources": [
+                {"type": "solar", "stat_energy_from": SOLAR, "config_entry_solar_forecast": None}
+            ],
+        }
+    )
+    assert (await client.receive_json())["success"]
+    await client.send_json_auto_id({"type": "energy/validate"})
+    result = (await client.receive_json())["result"]
+    assert result["energy_sources"] == [[]]  # no validation issues

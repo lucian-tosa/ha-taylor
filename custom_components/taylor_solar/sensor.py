@@ -56,20 +56,25 @@ def _panel(coordinator: TaylorCoordinator, panel_id: int) -> PanelDay | None:
     return next((p for p in coordinator.data.panels if p.panel_id == panel_id), None)
 
 
-def _panel_energy(panel_id: int) -> TaylorSensorDescription:
+def _panel_energy(panel: PanelDay) -> TaylorSensorDescription:
+    panel_id = panel.panel_id
+
     def attrs(c: TaylorCoordinator) -> dict[str, Any] | None:
         if (panel := _panel(c, panel_id)) is None:
             return None
         return {
+            "taylor_panel_id": panel_id,
             "cell_string_a_wh": panel.a,
             "cell_string_b_wh": panel.b,
             "cell_string_c_wh": panel.c,
         }
 
+    # The unique ID uses Taylor's panel ID, which never changes; the name uses
+    # the panel's number in the site layout when the payload provides one.
     return TaylorSensorDescription(
         key=f"panel_{panel_id}_energy_today",
         translation_key="panel_energy_today",
-        translation_placeholders={"panel_id": str(panel_id)},
+        translation_placeholders={"panel": str(panel.number or panel_id)},
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
@@ -115,7 +120,10 @@ async def async_setup_entry(
         types = {TYPE_SOLAR, *coordinator.data.series}
         descriptions = [SOLAR_POWER, IMPORTED_THROUGH]
         descriptions += [_energy_today(t) for t in sorted(types)]
-        descriptions += [_panel_energy(p.panel_id) for p in coordinator.data.panels]
+        descriptions += [
+            _panel_energy(p)
+            for p in sorted(coordinator.data.panels, key=lambda p: (p.number or 0, p.panel_id))
+        ]
         new = list({d.key: d for d in descriptions if d.key not in known}.values())
         known.update(d.key for d in new)
         if new:

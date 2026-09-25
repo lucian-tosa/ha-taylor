@@ -87,8 +87,10 @@ async def test_sensors(
     assert power.attributes["state_class"] == "measurement"
     assert power.attributes["bucket_start"] == "2026-06-15T07:00:00+00:00"
 
+    # No layout in this payload format: panels are named by Taylor's ID.
     panel = hass.states.get("sensor.home_panel_1234_energy_today")
     assert panel.state == "1.289"
+    assert panel.attributes["taylor_panel_id"] == 1234
     assert panel.attributes["cell_string_a_wh"] == 426
     assert panel.attributes["cell_string_c_wh"] == 433
     assert hass.states.get("sensor.home_panel_1235_energy_today").state == "1.2"
@@ -156,3 +158,53 @@ async def test_unload_and_remove(
     await hass.config_entries.async_remove(config_entry.entry_id)
     await hass.async_block_till_done(wait_background_tasks=True)
     assert key not in hass_storage
+
+
+async def test_live_format_panels_named_by_layout_number(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    client: AsyncMock,
+    days: dict[date, dict[str, Any]],
+    entity_registry: er.EntityRegistry,
+) -> None:
+    point = {
+        "timestamp": "2026-06-15T09:00:00",
+        "inverterEnergyData": {"quality": 0, "solarProduction": 400, "consumption": None},
+        "panelEnergyData": [
+            {
+                "id": 32684,
+                "cellStringAProductionWh": 10,
+                "cellStringBProductionWh": 11,
+                "cellStringCProductionWh": 12,
+            },
+            {
+                "id": 32577,
+                "cellStringAProductionWh": 9,
+                "cellStringBProductionWh": 9,
+                "cellStringCProductionWh": 9,
+            },
+        ],
+    }
+    days[TODAY] = {
+        "systemMetrics": [
+            {
+                "dataPoints": [point],
+                "panelLayout": {
+                    "panelPositions": [{"id": 32684, "number": 1}, {"id": 32577, "number": 2}]
+                },
+            }
+        ],
+        "dayDataPointDurationSeconds": 900,
+    }
+    await _setup(hass, config_entry)
+
+    assert hass.states.get("sensor.home_solar_production_today").state == "0.4"
+    assert hass.states.get("sensor.home_solar_power").state == "1600"
+    assert hass.states.get("sensor.home_consumption_today") is None
+
+    panel = hass.states.get("sensor.home_panel_1_energy_today")
+    assert panel.state == "0.033"
+    assert panel.attributes["taylor_panel_id"] == 32684
+    assert hass.states.get("sensor.home_panel_2_energy_today").state == "0.027"
+    entry = entity_registry.async_get("sensor.home_panel_1_energy_today")
+    assert entry.unique_id.endswith("_panel_32684_energy_today")

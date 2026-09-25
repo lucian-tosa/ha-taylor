@@ -176,7 +176,12 @@ LIVE = {
             ],
             "maxPossibleValue": 718,
             "panelCount": 2,
-            "panelLayout": {"panelPositions": []},
+            "panelLayout": {
+                "panelPositions": [
+                    {"id": 1, "number": 2, "orientation": 270},
+                    {"id": 2, "number": 1, "orientation": 270},
+                ]
+            },
         }
     ],
     "dayDataPointDurationSeconds": 900,
@@ -195,7 +200,10 @@ def test_live_format() -> None:
         ]
     }
     # Panel energy per interval is summed into per-day totals.
-    assert day.panels == [PanelDay(1, 20.5, 20.5, 20.5), PanelDay(2, 20.5, 20.5, 20.5)]
+    assert day.panels == [
+        PanelDay(1, 20.5, 20.5, 20.5, number=2),
+        PanelDay(2, 20.5, 20.5, 20.5, number=1),
+    ]
     assert hourly_kwh(day.series[0], AMS) == {
         datetime(2025, 6, 1, 3, tzinfo=UTC): 0.0,
         datetime(2025, 6, 1, 11, tzinfo=UTC): 0.438,
