@@ -1,0 +1,13 @@
+{
+  "domain": "taylor_solar",
+  "name": "Taylor Solar",
+  "codeowners": ["@lucian-tosa"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/lucian-tosa/ha-taylor",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/lucian-tosa/ha-taylor/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

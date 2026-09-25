@@ -1,0 +1,60 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Sign in with your Taylor account.",
+        "data": {
+          "username": "Email",
+          "password": "Password",
+          "backfill_days": "Days of history to import"
+        },
+        "data_description": {
+          "backfill_days": "Imported once, in the background, at about 8 days per minute. To change it later, remove and re-add the integration."
+        }
+      },
+      "site": {
+        "title": "Select site",
+        "data": {
+          "site_id": "Site"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Taylor Solar",
+        "description": "Enter the current password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Failed to connect to Taylor.",
+      "api_changed": "The Taylor API changed incompatibly. Update this integration.",
+      "no_sites": "No sites found for this account.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This site is already configured.",
+      "reauth_successful": "Reauthentication was successful."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "solar_production_today": { "name": "Solar production today" },
+      "consumption_today": { "name": "Consumption today" },
+      "grid_import_today": { "name": "Grid import today" },
+      "grid_export_today": { "name": "Grid export today" },
+      "battery_charge_today": { "name": "Battery charge today" },
+      "battery_discharge_today": { "name": "Battery discharge today" },
+      "solar_power": { "name": "Solar power" },
+      "panel_energy_today": { "name": "Panel {panel} energy today" },
+      "statistics_imported_through": { "name": "Statistics imported through" }
+    }
+  },
+  "issues": {
+    "api_changed": {
+      "title": "Taylor API changed",
+      "description": "The Taylor API reported a backwards-incompatible change (HTTP 418). Data is not updated until the Taylor Solar integration is updated."
+    }
+  }
+}
