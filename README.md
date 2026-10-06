@@ -67,7 +67,7 @@ To change the backfill period, remove the integration and add it again.
 A few behaviors of the Taylor API are undocumented. The code paths that depend on them are marked `TODO(verify)`. You can check them with `curl` (7.76 or newer) and `jq`. Start with this setup block. It prompts for your credentials, so the password stays out of your shell history. Each step prints its result, or the error body if a request fails:
 
 ```bash
-H=(-H 'Client-Version: 1.0.0' -H 'Client-Name: end-user-api' -H 'Content-Type: application/json')
+H=(-H 'Client-Version: 2.0.0' -H 'Client-Name: end-user-api' -H 'Content-Type: application/json')
 API=https://clientapi.taylor.solar
 read -rp 'Taylor email: ' TAYLOR_USER; read -rsp 'Taylor password: ' TAYLOR_PASS; echo
 AUTH=$(curl -sS --fail-with-body "${H[@]}" -H 'Accept: text/plain' -X POST "$API/api/authenticate" \
@@ -88,7 +88,7 @@ These were checked against a live site in September 2026 (one 3.7 kWp system wit
 
 - Each data point has an `inverterEnergyData` object instead of a `data` list of `type`/`wh` items. It holds `solarProduction` (Wh per interval), plus `consumption`, `grid`, `battery` and `balance`, which are `null` without a Taylor meter or battery. There is also a `quality` field, always 0 so far.
 - Per-panel production comes per data point, in `panelEnergyData` (`id` plus cell strings A/B/C in Wh). There is no `panelData`. It is present for past days too.
-- Intervals are 15 minutes (`dayDataPointDurationSeconds: 900`), and only daylight hours are reported. That means the DST fall-back hour never appears.
+- Intervals are 15 minutes, and only daylight hours are reported. That means the DST fall-back hour never appears. With `Client-Version: 1.0.0` the payload said so in `dayDataPointDurationSeconds: 900`; with 2.0.0 (checked October 2026) that field is gone, so the integration takes the interval from the spacing of the timestamps. The 2.0.0 data points also have no `balance` or `eurosSavedMill` fields.
 - Timestamps are naive site-local times. Points whose timestamp ends in `Z` are zero-filled padding for intervals without data, and are skipped. Days before installation return only padding, not a 404.
 
 The integration accepts both this format and the one in Taylor's document.

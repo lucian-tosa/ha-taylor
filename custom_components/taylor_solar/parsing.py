@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
+from .api import TaylorUnsupportedPayloadError
 from .const import DATA_TYPES
 
 type Series = list[tuple[datetime, float]]
@@ -58,9 +59,20 @@ def _energy_items(point: dict[str, Any]) -> list[tuple[Any, Any]]:
 
 
 def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
-    """Parse a day payload, summing data points across all system metrics."""
+    """Parse a day payload, summing data points across all system metrics.
+
+    Raises TaylorUnsupportedPayloadError when real data points carry no energy
+    in a known format, so a format change is never mistaken for an empty day.
+    """
     if not payload:
         return TaylorDay()
+    try:
+        return _parse_day(payload)
+    except (KeyError, TypeError, ValueError, AttributeError) as err:
+        raise TaylorUnsupportedPayloadError(f"Unrecognized day payload: {err!r}") from err
+
+
+def _parse_day(payload: dict[str, Any]) -> TaylorDay:
 
     # Keyed by (timestamp, occurrence) so a timestamp repeated on the DST
     # fall-back day stays two buckets; dict order preserves payload order.
@@ -73,18 +85,27 @@ def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
             totals[i] += panel.get(f"cellString{cell}ProductionWh") or 0
 
     numbers: dict[int, int] = {}
+    steps: set[float] = set()
 
     for metric in payload.get("systemMetrics") or []:
         layout = metric.get("panelLayout") or {}
         numbers |= {pos["id"]: pos["number"] for pos in layout.get("panelPositions") or []}
         seen: defaultdict[datetime, int] = defaultdict(int)
+        previous: datetime | None = None
         for point in metric.get("dataPoints") or []:
             # A "Z" suffix marks zero-filled padding for intervals without data
             # (before installation, after sunset); real intervals are naive
             # site-local times.
             if point["timestamp"].endswith("Z"):
                 continue
+            if "inverterEnergyData" not in point and "data" not in point:
+                raise TaylorUnsupportedPayloadError(
+                    f"Data point without energy fields: {sorted(point)}"
+                )
             ts = datetime.fromisoformat(point["timestamp"])
+            if previous is not None and ts > previous:
+                steps.add((ts - previous).total_seconds())
+            previous = ts
             key = (ts, seen[ts])
             seen[ts] += 1
             for type_, wh in _energy_items(point):
@@ -99,7 +120,10 @@ def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
             add_panel(panel["panelId"], panel)
 
     return TaylorDay(
-        interval_seconds=payload.get("dayDataPointDurationSeconds") or DEFAULT_INTERVAL_SECONDS,
+        # Client-Version 2.0.0 payloads omit the interval; the smallest step
+        # between real data points is the interval (gaps only add larger steps).
+        interval_seconds=payload.get("dayDataPointDurationSeconds")
+        or int(min(steps, default=DEFAULT_INTERVAL_SECONDS)),
         series={
             type_: [(ts, wh) for (ts, _), wh in buckets.items()]
             for type_, buckets in sorted(merged.items())

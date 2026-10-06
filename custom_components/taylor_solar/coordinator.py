@@ -94,7 +94,7 @@ class TaylorCoordinator(DataUpdateCoordinator[TaylorDay]):
 
     async def _async_update_data(self) -> TaylorDay:
         try:
-            payload = await self.client.async_get_day(self.site_id, dt_util.now().date())
+            day = parse_day(await self.client.async_get_day(self.site_id, dt_util.now().date()))
         except TaylorAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except TaylorApiVersionError as err:
@@ -104,7 +104,7 @@ class TaylorCoordinator(DataUpdateCoordinator[TaylorDay]):
             raise UpdateFailed(str(err)) from err
         ir.async_delete_issue(self.hass, DOMAIN, ISSUE_API_CHANGED)
         self.importer.async_schedule()
-        return parse_day(payload)
+        return day
 
 
 class StatisticsImporter:

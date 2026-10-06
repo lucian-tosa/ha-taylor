@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://clientapi.taylor.solar"
 HEADERS = {
-    "Client-Version": "1.0.0",
+    "Client-Version": "2.0.0",
     "Client-Name": "end-user-api",
     "Content-Type": "application/json",
 }
@@ -42,6 +42,10 @@ class TaylorAuthError(TaylorError):
 
 class TaylorApiVersionError(TaylorError):
     """HTTP 418: the API received backwards-incompatible changes."""
+
+
+class TaylorUnsupportedPayloadError(TaylorApiVersionError):
+    """A day payload has data points in a format the parser doesn't recognize."""
 
 
 class TaylorRateLimitError(TaylorError):

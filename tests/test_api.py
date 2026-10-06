@@ -82,7 +82,7 @@ async def test_headers_and_requests(
         DAY_URL,
     ]
     for _, _, _, headers in aioclient_mock.mock_calls:
-        assert headers["Client-Version"] == "1.0.0"
+        assert headers["Client-Version"] == "2.0.0"
         assert headers["Client-Name"] == "end-user-api"
         assert headers["Content-Type"] == "application/json"
     auth_call, sites_call, _ = aioclient_mock.mock_calls
