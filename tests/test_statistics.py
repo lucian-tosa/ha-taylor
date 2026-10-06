@@ -289,3 +289,18 @@ async def test_energy_dashboard_accepts_statistic(
     await client.send_json_auto_id({"type": "energy/validate"})
     result = (await client.receive_json())["result"]
     assert result["energy_sources"] == [[]]  # no validation issues
+
+
+async def test_unrecognized_format_stops_without_skipping_days(
+    hass: HomeAssistant,
+    importer: StatisticsImporter,
+    client: Mock,
+    days: dict[date, dict[str, Any]],
+) -> None:
+    """A format change raises the repair issue instead of marking days as empty."""
+    days[TODAY - timedelta(days=2)] = {
+        "systemMetrics": [{"dataPoints": [{"timestamp": "2026-06-13T12:00:00", "energy": 1}]}]
+    }
+    await importer.async_run()
+    assert importer.last_day == TODAY - timedelta(days=3)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_API_CHANGED)

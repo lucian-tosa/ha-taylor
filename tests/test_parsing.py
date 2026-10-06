@@ -3,6 +3,9 @@
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
+from custom_components.taylor_solar.api import TaylorUnsupportedPayloadError
 from custom_components.taylor_solar.parsing import PanelDay, hourly_kwh, localize, parse_day
 
 from .conftest import day_payload
@@ -228,3 +231,22 @@ def test_live_day_before_installation_is_empty() -> None:
     )
     assert day.series == {}
     assert day.panels == []
+
+
+@pytest.mark.parametrize(
+    "point",
+    [
+        {"timestamp": "2026-10-05T12:00:00", "energy": {"solar": 400}},  # renamed fields
+        {"time": "2026-10-05T12:00:00", "data": []},  # renamed timestamp
+        {"timestamp": "12:00", "data": []},  # unparseable timestamp
+    ],
+)
+def test_unrecognized_format_is_an_error(point: dict) -> None:
+    payload = {"systemMetrics": [{"dataPoints": [point]}], "dayDataPointDurationSeconds": 900}
+    with pytest.raises(TaylorUnsupportedPayloadError):
+        parse_day(payload)
+
+
+def test_padding_only_day_is_still_empty() -> None:
+    padding = {"timestamp": "2024-04-01T08:00:00Z", "energy": {"solar": 0}}
+    assert parse_day({"systemMetrics": [{"dataPoints": [padding]}]}).series == {}

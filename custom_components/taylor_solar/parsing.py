@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 
+from .api import TaylorUnsupportedPayloadError
 from .const import DATA_TYPES
 
 type Series = list[tuple[datetime, float]]
@@ -58,9 +59,20 @@ def _energy_items(point: dict[str, Any]) -> list[tuple[Any, Any]]:
 
 
 def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
-    """Parse a day payload, summing data points across all system metrics."""
+    """Parse a day payload, summing data points across all system metrics.
+
+    Raises TaylorUnsupportedPayloadError when real data points carry no energy
+    in a known format, so a format change is never mistaken for an empty day.
+    """
     if not payload:
         return TaylorDay()
+    try:
+        return _parse_day(payload)
+    except (KeyError, TypeError, ValueError, AttributeError) as err:
+        raise TaylorUnsupportedPayloadError(f"Unrecognized day payload: {err!r}") from err
+
+
+def _parse_day(payload: dict[str, Any]) -> TaylorDay:
 
     # Keyed by (timestamp, occurrence) so a timestamp repeated on the DST
     # fall-back day stays two buckets; dict order preserves payload order.
@@ -84,6 +96,10 @@ def parse_day(payload: dict[str, Any] | None) -> TaylorDay:
             # site-local times.
             if point["timestamp"].endswith("Z"):
                 continue
+            if "inverterEnergyData" not in point and "data" not in point:
+                raise TaylorUnsupportedPayloadError(
+                    f"Data point without energy fields: {sorted(point)}"
+                )
             ts = datetime.fromisoformat(point["timestamp"])
             key = (ts, seen[ts])
             seen[ts] += 1

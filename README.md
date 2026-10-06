@@ -67,7 +67,7 @@ To change the backfill period, remove the integration and add it again.
 A few behaviors of the Taylor API are undocumented. The code paths that depend on them are marked `TODO(verify)`. You can check them with `curl` (7.76 or newer) and `jq`. Start with this setup block. It prompts for your credentials, so the password stays out of your shell history. Each step prints its result, or the error body if a request fails:
 
 ```bash
-H=(-H 'Client-Version: 1.0.0' -H 'Client-Name: end-user-api' -H 'Content-Type: application/json')
+H=(-H 'Client-Version: 2.0.0' -H 'Client-Name: end-user-api' -H 'Content-Type: application/json')
 API=https://clientapi.taylor.solar
 read -rp 'Taylor email: ' TAYLOR_USER; read -rsp 'Taylor password: ' TAYLOR_PASS; echo
 AUTH=$(curl -sS --fail-with-body "${H[@]}" -H 'Accept: text/plain' -X POST "$API/api/authenticate" \
