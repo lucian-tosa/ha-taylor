@@ -1,5 +1,6 @@
 """Tests for the pure parsing functions."""
 
+from copy import deepcopy
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
@@ -250,3 +251,34 @@ def test_unrecognized_format_is_an_error(point: dict) -> None:
 def test_padding_only_day_is_still_empty() -> None:
     padding = {"timestamp": "2024-04-01T08:00:00Z", "energy": {"solar": 0}}
     assert parse_day({"systemMetrics": [{"dataPoints": [padding]}]}).series == {}
+
+
+def _v2(payload: dict) -> dict:
+    """Strip the fields that Client-Version 2.0.0 payloads no longer have."""
+    payload = deepcopy(payload)
+    del payload["dayDataPointDurationSeconds"]
+    for metric in payload["systemMetrics"]:
+        for point in metric["dataPoints"]:
+            del point["inverterEnergyData"]["balance"]
+            del point["eurosSavedMill"]
+    return payload
+
+
+def test_live_format_v2() -> None:
+    """Client-Version 2.0.0 payloads parse like 1.0.0 ones, interval included."""
+    assert parse_day(_v2(LIVE)) == parse_day(LIVE)
+
+
+@pytest.mark.parametrize(
+    ("timestamps", "interval"),
+    [
+        # Padding points don't count, and a gap in the data is not an interval.
+        (["10:55:00Z", "11:00:00", "11:05:00", "11:30:00", "11:35:00Z"], 300),
+        (["11:00:00", "11:00:00", "11:15:00"], 900),  # repeated DST timestamp
+        (["11:00:00"], 900),  # nothing to infer from
+    ],
+)
+def test_v2_interval_from_timestamps(timestamps: list[str], interval: int) -> None:
+    points = [_live_point(f"2026-10-05T{ts}", 100) for ts in timestamps]
+    day = parse_day({"systemMetrics": [{"dataPoints": points}]})
+    assert day.interval_seconds == interval

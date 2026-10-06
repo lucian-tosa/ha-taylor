@@ -85,11 +85,13 @@ def _parse_day(payload: dict[str, Any]) -> TaylorDay:
             totals[i] += panel.get(f"cellString{cell}ProductionWh") or 0
 
     numbers: dict[int, int] = {}
+    steps: set[float] = set()
 
     for metric in payload.get("systemMetrics") or []:
         layout = metric.get("panelLayout") or {}
         numbers |= {pos["id"]: pos["number"] for pos in layout.get("panelPositions") or []}
         seen: defaultdict[datetime, int] = defaultdict(int)
+        previous: datetime | None = None
         for point in metric.get("dataPoints") or []:
             # A "Z" suffix marks zero-filled padding for intervals without data
             # (before installation, after sunset); real intervals are naive
@@ -101,6 +103,9 @@ def _parse_day(payload: dict[str, Any]) -> TaylorDay:
                     f"Data point without energy fields: {sorted(point)}"
                 )
             ts = datetime.fromisoformat(point["timestamp"])
+            if previous is not None and ts > previous:
+                steps.add((ts - previous).total_seconds())
+            previous = ts
             key = (ts, seen[ts])
             seen[ts] += 1
             for type_, wh in _energy_items(point):
@@ -115,7 +120,10 @@ def _parse_day(payload: dict[str, Any]) -> TaylorDay:
             add_panel(panel["panelId"], panel)
 
     return TaylorDay(
-        interval_seconds=payload.get("dayDataPointDurationSeconds") or DEFAULT_INTERVAL_SECONDS,
+        # Client-Version 2.0.0 payloads omit the interval; the smallest step
+        # between real data points is the interval (gaps only add larger steps).
+        interval_seconds=payload.get("dayDataPointDurationSeconds")
+        or int(min(steps, default=DEFAULT_INTERVAL_SECONDS)),
         series={
             type_: [(ts, wh) for (ts, _), wh in buckets.items()]
             for type_, buckets in sorted(merged.items())
