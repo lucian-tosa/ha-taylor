@@ -119,10 +119,15 @@ async def test_backfill(hass: HomeAssistant, importer: StatisticsImporter, clien
         for h, kwh in ((8, 0.3), (12, 0.5))
     ]
     # Today: only complete hours (08:00 and 09:00 local; 10:00 still running).
-    assert [(start, state) for start, state, _ in rows] == [
+    assert [(start, state) for start, state, _ in rows if state] == [
         *past,
         (local(TODAY, 8), 0.2),
         (local(TODAY, 9), 0.3),
+    ]
+    # Every hour is written, with 0 kWh where Taylor reports nothing: 3 full
+    # days from local midnight, plus today's 10 complete hours.
+    assert [start for start, _, _ in rows] == [
+        local(TODAY - timedelta(days=3), 0) + timedelta(hours=h) for h in range(3 * 24 + 10)
     ]
     assert rows[-1][2] == pytest.approx(3 * 0.8 + 0.5)
 
@@ -183,7 +188,9 @@ async def test_empty_days_advance_cursor(
     assert importer.last_day == TODAY
     rows = await _stats(hass, SOLAR)
     _assert_consistent(rows)
-    assert rows[0][0] == local(TODAY - timedelta(days=1), 8)
+    # Nothing before the first day with data; that day starts at local midnight.
+    assert rows[0][0] == local(TODAY - timedelta(days=1), 0)
+    assert next(start for start, state, _ in rows if state) == local(TODAY - timedelta(days=1), 8)
 
     client.async_get_day.reset_mock()
     freezer.tick(timedelta(minutes=15))
@@ -229,15 +236,16 @@ async def test_error_stops_and_resumes(
     await importer.async_run()
     assert importer.last_day == TODAY - timedelta(days=2)
 
+    assert importer.last_reimport is None  # the run didn't finish
+
     client.async_get_day.side_effect = serve
     client.async_get_day.reset_mock()
     await importer.async_run()
+    # Resumes with today's daily re-import, which covers the failed day too.
     assert [c.args[1] for c in client.async_get_day.await_args_list] == [
-        TODAY - timedelta(days=3),
-        TODAY - timedelta(days=2),
-        TODAY - timedelta(days=1),
-        TODAY,
+        TODAY - timedelta(days=n) for n in range(7, -1, -1)
     ]
+    assert importer.last_reimport == TODAY
     rows = await _stats(hass, SOLAR)
     _assert_consistent(rows)
     assert rows[-1][2] == pytest.approx(3 * 0.8 + 0.5)
@@ -304,3 +312,63 @@ async def test_unrecognized_format_stops_without_skipping_days(
     await importer.async_run()
     assert importer.last_day == TODAY - timedelta(days=3)
     assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_API_CHANGED)
+
+
+async def test_daily_reimport_picks_up_older_corrections(
+    hass: HomeAssistant,
+    importer: StatisticsImporter,
+    client: Mock,
+    days: dict[date, dict[str, Any]],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Once a day the last 7 days are re-imported; other runs fetch two days."""
+    await importer.async_run()  # backfill on TODAY counts as today's re-import
+    assert importer.last_reimport == TODAY
+
+    # Next day: Taylor has corrected a day that is now 4 days old.
+    tomorrow = TODAY + timedelta(days=1)
+    old_day = TODAY - timedelta(days=3)
+    days[old_day] = day_payload(old_day, FULL_DAY | {"12:00": {0: 900}})
+    days[TODAY] = day_payload(TODAY, FULL_DAY)
+    days[tomorrow] = day_payload(tomorrow, {"08:00": {0: 100}})
+    freezer.move_to(local(tomorrow, 10) + timedelta(minutes=20))
+    client.async_get_day.reset_mock()
+    progress: list[date | None] = []
+    importer._on_progress = lambda: progress.append(importer.last_day)
+
+    await importer.async_run()
+    assert [c.args[1] for c in client.async_get_day.await_args_list] == [
+        tomorrow - timedelta(days=n) for n in range(7, -1, -1)
+    ]
+    assert set(progress) == {TODAY, tomorrow}  # the cursor never moves backwards
+    assert importer.last_reimport == tomorrow
+
+    rows = await _stats(hass, SOLAR)
+    _assert_consistent(rows)
+    assert {start: state for start, state, _ in rows}[local(old_day, 12)] == 0.9
+    assert rows[-1][2] == pytest.approx(0.3 + 0.9 + 2 * 0.8 + 0.8 + 0.1)
+
+    # Later the same day: back to yesterday and today only.
+    freezer.tick(timedelta(minutes=15))
+    client.async_get_day.reset_mock()
+    await importer.async_run()
+    assert [c.args[1] for c in client.async_get_day.await_args_list] == [TODAY, tomorrow]
+
+
+async def test_hour_dropped_by_revision_is_overwritten(
+    hass: HomeAssistant,
+    importer: StatisticsImporter,
+    days: dict[date, dict[str, Any]],
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """A revised day without an hour it used to report doesn't leave a stale row."""
+    await importer.async_run()
+    yesterday = TODAY - timedelta(days=1)
+    days[yesterday] = day_payload(yesterday, {"08:00": {0: 100, 3: 10}, "08:30": {0: 200}})
+    freezer.tick(timedelta(minutes=15))
+    await importer.async_run()
+
+    rows = await _stats(hass, SOLAR)
+    _assert_consistent(rows)
+    assert {start: state for start, state, _ in rows}[local(yesterday, 12)] == 0.0
+    assert rows[-1][2] == pytest.approx(2 * 0.8 + 0.3 + 0.5)

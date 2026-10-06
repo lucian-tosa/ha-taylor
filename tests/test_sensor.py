@@ -151,7 +151,7 @@ async def test_unload_and_remove(
     async_fire_time_changed(hass)
     await hass.async_block_till_done(wait_background_tasks=True)
     key = f"{DOMAIN}.{config_entry.entry_id}"
-    assert hass_storage[key]["data"] == {"last_day": "2026-06-15"}
+    assert hass_storage[key]["data"] == {"last_day": "2026-06-15", "last_reimport": "2026-06-15"}
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.NOT_LOADED

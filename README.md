@@ -6,7 +6,7 @@ A RESTful sensor would book energy at poll time, couldn't backfill, and would re
 
 - It writes Taylor's 15-minute buckets into **external statistics** at their real UTC hour.
 - It **backfills** history on first setup, from 0 to 1095 days.
-- On every run it **re-imports yesterday and today** to pick up Taylor's revisions, and rewrites the running sums consistently.
+- On every run it **re-imports yesterday and today**, and once a day **the last 7 days**, to pick up Taylor's revisions and gaps it fills in later. Re-imported days are rewritten hour by hour, with consistent running sums.
 - It handles token refresh, rate limiting (HTTP 429) and API-version breaks (HTTP 418, raised as a repair issue).
 
 Requires Home Assistant 2026.1 or newer. It has no dependencies beyond what Home Assistant ships.
