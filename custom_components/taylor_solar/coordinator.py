@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from functools import partial
 import logging
 import re
 
@@ -16,6 +17,7 @@ from homeassistant.components.recorder.models import (
 )
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
+    get_metadata,
     statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -33,6 +35,7 @@ from .const import (
     CONF_BACKFILL_DAYS,
     CONF_SITE_ID,
     CONF_SITE_NAME,
+    DAILY_REIMPORT_DAYS,
     DATA_TYPES,
     DEFAULT_BACKFILL_DAYS,
     DOMAIN,
@@ -107,6 +110,17 @@ class TaylorCoordinator(DataUpdateCoordinator[TaylorDay]):
         return day
 
 
+def _complete_hours(day: date, now: datetime) -> list[datetime]:
+    """Return the UTC starts of the local day's hours that have ended by now."""
+    hour = dt_util.as_utc(dt_util.start_of_local_day(day))
+    end = dt_util.as_utc(dt_util.start_of_local_day(day + timedelta(days=1)))
+    hours = []
+    while hour < end and hour + HOUR <= now:
+        hours.append(hour)
+        hour += HOUR
+    return hours
+
+
 class StatisticsImporter:
     """Imports hourly energy into external statistics, tracked by a day cursor."""
 
@@ -127,11 +141,15 @@ class StatisticsImporter:
         )
         self._lock = asyncio.Lock()
         self.last_day: date | None = None
+        self.last_reimport: date | None = None  # date of the last daily re-import
 
     async def async_load(self) -> None:
         """Load the cursor."""
-        if (data := await self._store.async_load()) and (last := data.get("last_day")):
+        data = await self._store.async_load() or {}
+        if last := data.get("last_day"):
             self.last_day = date.fromisoformat(last)
+        if last := data.get("last_reimport"):
+            self.last_reimport = date.fromisoformat(last)
 
     @callback
     def async_schedule(self) -> None:
@@ -168,32 +186,49 @@ class StatisticsImporter:
             first = today - timedelta(days=days)
         else:
             first = min(self.last_day - timedelta(days=1), today)
+            if self.last_reimport != today:
+                first = min(first, today - timedelta(days=DAILY_REIMPORT_DAYS))
         window_start = dt_util.as_utc(dt_util.start_of_local_day(first))
         site_id: str = self.entry.data[CONF_SITE_ID]
         site_name: str = self.entry.data[CONF_SITE_NAME]
 
         # Commit the previous run's rows before reading base sums.
         await get_instance(self.hass).async_block_till_done()
-        sums: dict[int, float] = {}
+        # Types imported before get a row for every hour of every re-imported
+        # day, so an hour Taylor no longer reports is overwritten with 0 kWh
+        # instead of keeping a stale value and sum.
+        existing = await get_instance(self.hass).async_add_executor_job(
+            partial(
+                get_metadata,
+                self.hass,
+                statistic_ids={statistic_id(site_id, t) for t in DATA_TYPES},
+            )
+        )
+        sums: dict[int, float] = {
+            type_: await self._async_base_sum(statistic_id(site_id, type_), window_start)
+            for type_ in DATA_TYPES
+            if statistic_id(site_id, type_) in existing
+        }
 
         day = first
         while day <= today:
             parsed = parse_day(await self.client.async_get_day(site_id, day))
-            for type_, series in parsed.series.items():
-                hours = sorted(
-                    (start, kwh)
-                    for start, kwh in hourly_kwh(series, tz).items()
-                    if start + HOUR <= now  # complete hours only
-                )
-                if not hours:
+            hours = _complete_hours(day, now)
+            for type_ in sorted(set(parsed.series) | set(sums)):
+                kwh = hourly_kwh(parsed.series.get(type_, []), tz)
+                if type_ not in sums:
+                    if not any(hour in kwh for hour in hours):
+                        continue  # no statistics before the first data
+                    sums[type_] = 0.0
+                rows = []
+                for hour in hours:
+                    sums[type_] += kwh.get(hour, 0.0)
+                    rows.append(
+                        StatisticData(start=hour, state=kwh.get(hour, 0.0), sum=sums[type_])
+                    )
+                if not rows:
                     continue
                 stat_id = statistic_id(site_id, type_)
-                if type_ not in sums:
-                    sums[type_] = await self._async_base_sum(stat_id, window_start)
-                rows = []
-                for start, kwh in hours:
-                    sums[type_] += kwh
-                    rows.append(StatisticData(start=start, state=kwh, sum=sums[type_]))
                 async_add_external_statistics(
                     self.hass,
                     StatisticMetaData(
@@ -207,16 +242,22 @@ class StatisticsImporter:
                     ),
                     rows,
                 )
-            self.last_day = day
+            # Re-imported days never move the cursor backwards.
+            self.last_day = max(self.last_day or day, day)
             self._store.async_delay_save(self._data_to_save, 1)
             self._on_progress()
             if (day - first).days % 30 == 29:
                 _LOGGER.info("Taylor statistics imported through %s", day)
             day += timedelta(days=1)
+        self.last_reimport = today
+        self._store.async_delay_save(self._data_to_save, 1)
 
     def _data_to_save(self) -> dict[str, str]:
         assert self.last_day is not None
-        return {"last_day": self.last_day.isoformat()}
+        data = {"last_day": self.last_day.isoformat()}
+        if self.last_reimport:
+            data["last_reimport"] = self.last_reimport.isoformat()
+        return data
 
     async def _async_base_sum(self, stat_id: str, window_start: datetime) -> float:
         """Return the sum of the last row before the window, or 0."""

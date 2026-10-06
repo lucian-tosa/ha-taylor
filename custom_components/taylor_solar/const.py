@@ -13,6 +13,9 @@ DEFAULT_BACKFILL_DAYS: Final = 365
 MAX_BACKFILL_DAYS: Final = 1095
 
 UPDATE_INTERVAL: Final = timedelta(minutes=15)
+# Once a day, the importer re-fetches this many past days to pick up Taylor's
+# later corrections and filled-in gaps; other runs re-fetch yesterday and today.
+DAILY_REIMPORT_DAYS: Final = 7
 
 # Taylor data point types -> statistic key suffix / translation key.
 TYPE_SOLAR: Final = 0
